@@ -60,11 +60,11 @@ const int fpSerialOutPin = 5;
 // Pin for the servo that points towards where to go using GPS and
 // the mode toggle button for the locator.
 const int locatorServoPin = 10;
-const int locatorModeButtonPin = 6;
+const int locatorModeButtonPin = 9;
 // Max angle that we will allow the servo to rotate in degrees.
 // Half of this angle means that the servo should be facing straight forwards.
 const int locatorServoMaxAngle = 100;
-const int locModeButtonChangeDestAfterMs = 3000;
+const int locModeButtonChangeDestAfterMs = 1500;
 
 // Pins for the visibility light and the button to toggle it.
 const int visibilityLightPin = 7;
@@ -74,7 +74,7 @@ const int visLightButtonAlwaysOnAfterMs = 1500;
 // Pin for the morse code buzzer, light and receiver.
 const int morseBuzzerPin = 11;
 const int morseLightPin = 12;
-const int morseToggleButtonPin = 9;
+const int morseToggleButtonPin = 6;
 const int morseReceiverInPin = 13;
 // Frequency of tone to play from buzzer in Hz.
 const int morseBuzzerFrequency = 2349;
@@ -269,18 +269,25 @@ void handleGPSLocator() {
                                         locModeButtonChangeDestAfterMs;
   } else if (locatorModeButtonState == LOW &&
              locatorModeButtonStatePrev == HIGH) {
-    if (millis() >= locModeButtonChangeDestModeTime && gps.fix) {
-      // Set destination to current location and trigger update.
-      destinationLatDegrees = gps.latitudeDegrees;
-      destinationLonDegrees = gps.longitudeDegrees;
-      
-      BDBG_PRINT("Set new destination; (lat, lon) = (");
-      BDBG_PRINT(destinationLatDegrees, 4);
-      BDBG_PRINT(", "); BDBG_PRINT(destinationLonDegrees, 4);
-      BDBG_PRINTLN(")");
+    if (millis() >= locModeButtonChangeDestModeTime) {
+      if (!gps.fix) {
+        BDBG_PRINTLN("Can't set new destination - no GPS fix!");
+      } else {
+        // Set destination to current location and trigger update.
+        destinationLatDegrees = gps.latitudeDegrees;
+        destinationLonDegrees = gps.longitudeDegrees;
+        
+        BDBG_PRINT("Set new destination; (lat, lon) = (");
+        BDBG_PRINT(destinationLatDegrees, 4);
+        BDBG_PRINT(", "); BDBG_PRINT(destinationLonDegrees, 4);
+        BDBG_PRINTLN(")");
+      }
     } else {
       // Change to next mode and trigger update.
-      if (++locatorMode >= LOCATOR_NUM_MODES) locatorMode = 0;
+      locatorMode = (LocatorMode)((int)(locatorMode + 1));
+      if ((int)locatorMode >= LOCATOR_NUM_MODES)
+        locatorMode = (LocatorMode)0;
+        
       BDBG_PRINT("New locator mode: "); BDBG_PRINTLN(locatorMode);
     }
 
