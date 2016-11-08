@@ -39,10 +39,18 @@ enum LocatorMode {
   LOCATOR_BEARING,
   LOCATOR_DISTANCE,
   LOCATOR_ALTITUDE,
-  LOCATOR_SECONDS,
-  LOCATOR_MINUTES,
   LOCATOR_HOURS,
+  LOCATOR_MINUTES,
+  LOCATOR_SECONDS,
   LOCATOR_NUM_MODES // Keep as last in enum.
+};
+
+// Different modes for the morse code thing.
+enum MorseMode {
+  MORSE_LIGHT,
+  MORSE_BUZZER,
+  MORSE_NONE,
+  MORSE_NUM_MODES // Keep as last in enum.
 };
 
 
@@ -89,10 +97,15 @@ bool userAuthenticated = false;
 int visLightButtonStatePrev = LOW;
 bool visLightAlwaysOn = false;
 unsigned long visLightButtonStayOnModeTime = 0;
+// Time vis light should invert its state until. Used to indicate stats.
+unsigned long visLightInvertUntilTime = 0;
 
 // Last state of the morse code toggle button and state.
+MorseMode morseMode = MORSE_LIGHT;
 bool morseUseBuzzerNotLight = false;
 int morseToggleButtonStatePrev = LOW;
+// Play morse until the time is reached. Used to indicate status.
+unsigned long morseOnAnywayUntilTime = 0;
 
 // Destination co-ords. NOTE: Default to Morrisons close to Nixon Court.
 double destinationLatDegrees = 52.6201813;
@@ -118,7 +131,6 @@ Servo locatorServo;
 
 
 bool authFingerprint() {
-  return true;
   // Make sure that we have found the fp scanner.
   if (!fpScanner.verifyPassword()) return false;
   
@@ -167,15 +179,16 @@ void setup() {
 
     // Flash vis light and buzz morse to indicate failure.
     analogWrite(morseBuzzerPin, 100);
-    digitalWrite(visibilityLightPin, HIGH);
-    delay(2000);
+    digitalWrite(morseLightPin, HIGH);
+    delay(1250);
     analogWrite(morseBuzzerPin, 0);
-    digitalWrite(visibilityLightPin, LOW);
+    digitalWrite(morseLightPin, LOW);
   }
   
   // Successfully auth'd using fingerprint!
   BDBG_PRINT("Fingerprint matched! ID "); BDBG_PRINT(fpScanner.fingerID);
   BDBG_PRINT(", Confidence "); BDBG_PRINTLN(fpScanner.confidence);
+  fpScannerSerial.stopListening();
   
   // Stop listening to the fingerprint scanner and listen to the GPS instead.
   gps.begin(9600);
@@ -189,7 +202,15 @@ void setup() {
   
   // Finished setup, print auth status.
   BDBG_PRINT("Setup done; user auth'd: "); BDBG_PRINTLN(userAuthenticated);
-  delay(1000);
+
+  // Success!
+  analogWrite(morseBuzzerPin, 200);
+  digitalWrite(visibilityLightPin, HIGH);
+  digitalWrite(morseLightPin, HIGH);
+  delay(250);
+  analogWrite(morseBuzzerPin, 0);
+  digitalWrite(visibilityLightPin, LOW);
+  digitalWrite(morseLightPin, LOW);
 }
 
 
@@ -285,8 +306,12 @@ void handleGPSLocator() {
     } else {
       // Change to next mode and trigger update.
       locatorMode = (LocatorMode)((int)(locatorMode + 1));
-      if ((int)locatorMode >= LOCATOR_NUM_MODES)
+      visLightInvertUntilTime = millis() + 100;
+      
+      if ((int)locatorMode >= LOCATOR_NUM_MODES) {
         locatorMode = (LocatorMode)0;
+        visLightInvertUntilTime += 350;
+      }
         
       BDBG_PRINT("New locator mode: "); BDBG_PRINTLN(locatorMode);
     }
@@ -339,17 +364,17 @@ void handleGPSLocator() {
     }
 
     case LOCATOR_SECONDS: {
-      locatorAngle = (int)round(locatorServoMaxAngle * gps.seconds / 59.0);
+      locatorAngle = (int)round(locatorServoMaxAngle * gps.seconds / 60.0);
       break;
     }
 
     case LOCATOR_MINUTES: {
-      locatorAngle = (int)round(locatorServoMaxAngle * gps.minute / 59.0);
+      locatorAngle = (int)round(locatorServoMaxAngle * gps.minute / 60.0);
       break;
     }
 
     case LOCATOR_HOURS: {
-      locatorAngle = (int)round(locatorServoMaxAngle * gps.hour / 23.0);
+      locatorAngle = (int)round(locatorServoMaxAngle * gps.hour / 24.0);
       break;
     }
   }
@@ -369,7 +394,15 @@ void handleVisibilityLight() {
     visLightAlwaysOn = true;
   }
 
-  digitalWrite(visibilityLightPin, (visLightAlwaysOn || visLightButtonState == HIGH) ? HIGH : LOW);
+  int visLightWriteValue;
+  const bool visLightInvert = millis() < visLightInvertUntilTime;
+  if (visLightAlwaysOn || visLightButtonState == HIGH) {
+    visLightWriteValue = visLightInvert ? LOW : HIGH;
+  } else {
+    visLightWriteValue = visLightInvert ? HIGH : LOW;
+  }
+  
+  digitalWrite(visibilityLightPin, visLightWriteValue);
   visLightButtonStatePrev = visLightButtonState;
 }
 
@@ -379,28 +412,35 @@ void handleMorseCode() {
 
   if (morseToggleButtonState != morseToggleButtonStatePrev &&
       morseToggleButtonState == HIGH) {
-    // Morse mode toggled - use light/buzzer instead.
-    morseUseBuzzerNotLight = !morseUseBuzzerNotLight;
+    // Morse mode changed.
+    morseMode = (MorseMode)((int)(morseMode + 1));
+    morseOnAnywayUntilTime = millis() + 350;
+    
+    if ((int)morseMode >= MORSE_NUM_MODES) morseMode = (MorseMode)0;
+    BDBG_PRINT("New morse mode: "); BDBG_PRINTLN((int)morseMode);
 
     // Make sure light/buzzer from previous state isn't activated now.
-    if (morseUseBuzzerNotLight) {
+    // (Or neither activated if now off).
+    if (morseMode == MORSE_BUZZER || morseMode == MORSE_NONE) {
       digitalWrite(morseLightPin, LOW);
-    } else {
+    } 
+    if (morseMode == MORSE_LIGHT || morseMode == MORSE_NONE) {
       analogWrite(morseBuzzerPin, 0);
     }
   }
 
   const int morseReceiverReading = pulseIn(morseReceiverInPin, HIGH, 100000);
-  const bool receivingMorse = morseReceiverReading > morseReceiverNoBeepMax;
+  const bool receivingMorse = morseReceiverReading > morseReceiverNoBeepMax ||
+                              millis() < morseOnAnywayUntilTime;
   
   // If we're receiving morse, use light/buzzer depending on our mode.
-  if (morseUseBuzzerNotLight) {
+  if (morseMode == MORSE_BUZZER) {
     if (receivingMorse) {
       analogWrite(morseBuzzerPin, 100);
     } else {
       analogWrite(morseBuzzerPin, 0);
     }
-  } else if (!morseUseBuzzerNotLight) {
+  } else if (morseMode == MORSE_LIGHT) {
     digitalWrite(morseLightPin, receivingMorse ? HIGH : LOW);
   }
 
