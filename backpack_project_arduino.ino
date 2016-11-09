@@ -35,7 +35,7 @@
 
 // Different locator modes.
 enum LocatorMode {
-  LOCATOR_FIX_QUALITY,
+  LOCATOR_HDOP_QUALITY,
   LOCATOR_BEARING,
   LOCATOR_DISTANCE,
   LOCATOR_ALTITUDE,
@@ -111,7 +111,7 @@ unsigned long morseOnAnywayUntilTime = 0;
 double destinationLatDegrees = 52.6201813;
 double destinationLonDegrees = -1.1337551;
 
-LocatorMode locatorMode = LOCATOR_FIX_QUALITY;
+LocatorMode locatorMode = LOCATOR_HDOP_QUALITY;
 int locatorModeButtonStatePrev = LOW;
 unsigned long locModeButtonChangeDestModeTime = 0;
 
@@ -330,8 +330,8 @@ void handleGPSLocator() {
   int locatorAngle;
   
   switch (locatorMode) {
-    case LOCATOR_FIX_QUALITY: {
-      locatorAngle = (int)round(locatorServoMaxAngle * gps.fixquality / 100.0);
+    case LOCATOR_HDOP_QUALITY: {
+      locatorAngle = (int)round(locatorServoMaxAngle * (gps.fix ? (20.0 - gps.HDOP) / 20.0 : 0.0));
       break;  
     }
 
