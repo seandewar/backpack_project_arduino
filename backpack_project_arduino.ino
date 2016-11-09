@@ -297,6 +297,9 @@ void handleGPSLocator() {
         // Set destination to current location and trigger update.
         destinationLatDegrees = gps.latitudeDegrees;
         destinationLonDegrees = gps.longitudeDegrees;
+
+        // Status light feedback
+        visLightInvertUntilTime = millis() + 350;
         
         BDBG_PRINT("Set new destination; (lat, lon) = (");
         BDBG_PRINT(destinationLatDegrees, 4);
@@ -333,23 +336,23 @@ void handleGPSLocator() {
     }
 
     case LOCATOR_BEARING: {
-      const double angle = radiansToDegrees(calcBearingLatLon(
+      const double angle = gps.fix ? radiansToDegrees(calcBearingLatLon(
                         degreesToRadians(gps.latitudeDegrees),
                         degreesToRadians(gps.longitudeDegrees),
                         //degreesToRadians(52.6165069),
                         //degreesToRadians(-1.1297154),
                         degreesToRadians(destinationLatDegrees),
-                        degreesToRadians(destinationLonDegrees)));
-      locatorAngle = (int)round((angle + 180.0) / 3.0);               
+                        degreesToRadians(destinationLonDegrees))) : 0.0;
+      locatorAngle = (int)round((angle + 180.0) / (360.0 / locatorServoMaxAngle));               
       break;
     }
     
     case LOCATOR_DISTANCE: {
-      const double dist = calcDistanceLatLon(
+      const double dist = gps.fix ? calcDistanceLatLon(
                          degreesToRadians(gps.latitudeDegrees),
                          degreesToRadians(gps.longitudeDegrees),
                          degreesToRadians(destinationLatDegrees),
-                         degreesToRadians(destinationLonDegrees));
+                         degreesToRadians(destinationLonDegrees)) : 0.0;
       //const double distLog = log(dist / 1000.0) / log(2);
       //const double distLogScale = min(4, distLog / 4.0);
       //locatorAngle = (int)round(distLogScale * locatorServoMaxAngle);
@@ -359,7 +362,7 @@ void handleGPSLocator() {
 
     case LOCATOR_ALTITUDE: {
       locatorAngle = (int)round(locatorServoMaxAngle *
-                       (gps.altitude + 1000.0) / 10000.0);
+        ((gps.fix ? gps.altitude : 0.0) + 1000.0) / 10000.0);
       break;
     }
 
